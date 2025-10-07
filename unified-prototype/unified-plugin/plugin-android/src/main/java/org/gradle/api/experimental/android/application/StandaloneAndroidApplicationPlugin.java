@@ -4,6 +4,7 @@ import com.android.build.api.dsl.ApplicationExtension;
 import org.gradle.api.Project;
 import org.gradle.api.experimental.android.AbstractAndroidSoftwarePlugin;
 import org.gradle.api.experimental.android.AndroidSoftware;
+import org.gradle.api.experimental.android.extensions.linting.LintSupport;
 import org.gradle.api.experimental.android.nia.NiaSupport;
 import org.gradle.api.internal.plugins.software.SoftwareType;
 
@@ -18,7 +19,7 @@ public abstract class StandaloneAndroidApplicationPlugin extends AbstractAndroid
 
     public static final String ANDROID_APPLICATION = "androidApplication";
 
-    @SoftwareType(name = ANDROID_APPLICATION, modelPublicType=AndroidApplication.class)
+    @SoftwareType(name = ANDROID_APPLICATION, modelPublicType = AndroidApplication.class)
     public abstract AndroidApplication getAndroidApplication();
 
     @Override
@@ -31,7 +32,6 @@ public abstract class StandaloneAndroidApplicationPlugin extends AbstractAndroid
         super.apply(project);
 
         AndroidApplication dslModel = getAndroidApplication();
-        project.getExtensions().add(ANDROID_APPLICATION, dslModel);
 
         // Setup application-specific conventions
         dslModel.getDependencyGuard().getEnabled().convention(false);
@@ -63,7 +63,7 @@ public abstract class StandaloneAndroidApplicationPlugin extends AbstractAndroid
      */
     private void linkDslModelToPlugin(Project project, AndroidApplication dslModel) {
         ApplicationExtension android = project.getExtensions().getByType(ApplicationExtension.class);
-        linkDslModelToPlugin(project, dslModel, android);
+        super.linkDslModelToPlugin(project, dslModel, android);
 
         android.defaultConfig(defaultConfig -> {
             ifPresent(dslModel.getVersionCode(), defaultConfig::setVersionCode);
@@ -71,6 +71,7 @@ public abstract class StandaloneAndroidApplicationPlugin extends AbstractAndroid
             ifPresent(dslModel.getApplicationId(), defaultConfig::setApplicationId);
             return null;
         });
+        LintSupport.configureLint(project, dslModel);
 
         android.getBuildFeatures().setViewBinding(dslModel.getViewBinding().getEnabled().get());
         android.getBuildFeatures().setDataBinding(dslModel.getDataBinding().getEnabled().get());

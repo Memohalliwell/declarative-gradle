@@ -18,12 +18,11 @@ public abstract class StandaloneCppApplicationPlugin implements Plugin<Project> 
     public static final String CPP_APPLICATION = "cppApplication";
 
     @SoftwareType(name = CPP_APPLICATION)
-    abstract public CppApplication getApplication();
+    public abstract CppApplication getApplication();
 
     @Override
     public void apply(Project target) {
         CppApplication application = getApplication();
-        target.getExtensions().add(CPP_APPLICATION, application);
 
         target.getPlugins().apply(CppApplicationPlugin.class);
         target.getPlugins().apply(CliApplicationConventionsPlugin.class);

@@ -1,13 +1,21 @@
 package org.gradle.util
 
-import org.apache.commons.io.FileUtils
 import spock.lang.Specification
+import spock.lang.TempDir
+
+import java.nio.file.InvalidPathException
+import java.util.jar.JarEntry
+import java.util.jar.JarOutputStream
+
+import static org.gradle.test.util.TestAssertions.assertDirContainsExactly
 
 class ResourceLoaderIntegrationTest extends Specification {
-    File outputDir
+    @TempDir
+    File tempDir
 
-    def setup() {
-        outputDir = new File("build/tmp/integTest/output").tap { deleteDir() }
+    private File outputDir = new File("build/tmp/integTest/output").tap {
+        deleteDir()
+        mkdirs()
     }
 
     def "can load resource from jar file"() {
@@ -18,12 +26,37 @@ class ResourceLoaderIntegrationTest extends Specification {
         resourceLoader.extractDirectoryFromResources("templates/java-library", outputDir)
 
         then:
-        assertOutputIs(['build.gradle.dcl', 'src/main/java/com/example/lib/Library.java'])
+        assertDirContainsExactly(outputDir, ['build.gradle.dcl', 'src/main/java/com/example/lib/Library.java'])
     }
 
-    private void assertOutputIs(List<String> expectedRelativePaths) {
-        def actualPaths = FileUtils.listFiles(outputDir, null, true)*.path
-        def expectedPaths = expectedRelativePaths.collect { "${outputDir.toPath()}/$it".toString() }
-        assert actualPaths == expectedPaths
+    def "throws exception when resource resolves to a file outside of the target directory"() {
+        given:
+        File poisonJar = createPoisonJarFile()
+        URLClassLoader poisonClassLoader = new URLClassLoader([poisonJar.toURI().toURL()] as URL[])
+        ResourceLoader resourceLoader = new ResourceLoader(poisonClassLoader)
+
+        when:
+        resourceLoader.extractDirectoryFromResources("foo", outputDir)
+
+        then:
+        def e = thrown(InvalidPathException)
+        e.message == "Entry resolves to a path outside of the target directory: /../poison.txt"
+
+        and:
+        !new File(outputDir.parentFile, "poison.txt").exists()
+    }
+
+    File createPoisonJarFile() {
+        File poisonJar = new File(tempDir, "poison.jar")
+        new JarOutputStream(new FileOutputStream(poisonJar)).withCloseable { jarOut ->
+            def foo = new JarEntry("foo/")
+            jarOut.putNextEntry(foo)
+            jarOut.closeEntry()
+            def poison = new JarEntry("foo/../poison.txt")
+            jarOut.putNextEntry(poison)
+            jarOut.write("This is poison".bytes)
+            jarOut.closeEntry()
+        }
+        return poisonJar
     }
 }

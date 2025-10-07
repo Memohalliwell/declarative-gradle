@@ -9,23 +9,37 @@ plugins {
 description = "Implements the declarative KMP DSL prototype"
 
 dependencies {
-    implementation(project(":plugin-common"))
+    api(project(":plugin-common"))
+
     implementation(project(":plugin-jvm"))
     implementation(libs.kotlin.multiplatform)
     implementation(libs.kotlin.jvm)
+    implementation(libs.apache.commons.text)
 }
 
 testing {
     suites {
+        @Suppress("UnstableApiUsage")
         val integTest by registering(JvmTestSuite::class) {
             useSpock("2.2-groovy-3.0")
 
             dependencies {
                 implementation(project(":internal-testing-utils"))
             }
+
+            targets {
+                all {
+                    testTask.configure {
+                        shouldRunAfter(tasks.named("test"))
+                        inputs.files(layout.settingsDirectory.file("version.txt"))
+                    }
+                }
+            }
         }
 
-        tasks.getByPath("check").dependsOn(integTest)
+        tasks.named("check") {
+            dependsOn(integTest)
+        }
     }
 }
 
@@ -60,6 +74,13 @@ gradlePlugin {
             description = "Experimental declarative plugin for the Kotlin Multiplatform ecosystem"
             implementationClass = "org.gradle.api.experimental.kmp.KmpEcosystemPlugin"
             tags = setOf("declarative-gradle", "kotlin-multiplatform")
+        }
+        create("kmp-ecosystem-init") {
+            id = "org.gradle.experimental.kmp-ecosystem-init"
+            displayName = "KMP Experimental Init Plugin"
+            description = "Experimental init plugin for the Kotlin Multiplatform ecosystem"
+            implementationClass = "org.gradle.api.experimental.kmp.KmpEcosystemInitPlugin"
+            tags = setOf("declarative-gradle", "kotlin-multiplatform", "init")
         }
     }
 }

@@ -2,6 +2,13 @@ javaApplication {
     // compile for 17
     javaVersion = 17
     mainClass = "com.example.App"
+    jvmArguments = listOf("-Xmx2G", "-XX:+HeapDumpOnOutOfMemoryError")
+
+    checkstyle {
+        checkstyleVersion = "9.3"
+        configDirectory = layout.settingsDirectory.dir("config")
+        configFile = layout.settingsDirectory.file("config/checkstyle.xml")
+    }
 
     dependencies {
         implementation(project(":java-util"))

@@ -1,12 +1,11 @@
 pluginManagement {
     repositories {
-        google() // Needed for the Android plugin, applied by the unified plugin
         gradlePluginPortal()
     }
 }
 
 plugins {
-    id("org.gradle.experimental.jvm-ecosystem") version "0.1.13"
+    id("org.gradle.experimental.jvm-ecosystem").version("0.1.45")
 }
 
 rootProject.name = "example-java-app"

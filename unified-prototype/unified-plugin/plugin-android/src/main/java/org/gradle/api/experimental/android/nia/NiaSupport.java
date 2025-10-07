@@ -1,6 +1,9 @@
 package org.gradle.api.experimental.android.nia;
 
+import androidx.baselineprofile.gradle.consumer.BaselineProfileConsumerExtension;
+import androidx.baselineprofile.gradle.producer.BaselineProfileProducerExtension;
 import com.android.SdkConstants;
+import com.android.build.api.artifact.ScopedArtifact;
 import com.android.build.api.artifact.SingleArtifact;
 import com.android.build.api.dsl.ApplicationExtension;
 import com.android.build.api.dsl.ApplicationProductFlavor;
@@ -11,12 +14,16 @@ import com.android.build.api.dsl.LibraryExtension;
 import com.android.build.api.dsl.ManagedVirtualDevice;
 import com.android.build.api.dsl.ProductFlavor;
 import com.android.build.api.dsl.TestOptions;
+import com.android.build.api.dsl.VariantDimension;
 import com.android.build.api.variant.AndroidComponentsExtension;
 import com.android.build.api.variant.ApplicationAndroidComponentsExtension;
 import com.android.build.api.variant.BuiltArtifactsLoader;
 import com.android.build.api.variant.HasAndroidTest;
 import com.android.build.api.variant.LibraryAndroidComponentsExtension;
+import com.android.build.api.variant.ScopedArtifacts;
+import com.android.build.api.variant.TestAndroidComponentsExtension;
 import com.android.build.gradle.BaseExtension;
+import com.android.build.gradle.TestExtension;
 import com.dropbox.gradle.plugins.dependencyguard.DependencyGuardPluginExtension;
 import com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension;
 import org.apache.commons.lang3.StringUtils;
@@ -24,10 +31,17 @@ import org.apache.commons.lang3.text.WordUtils;
 import org.gradle.api.*;
 import org.gradle.api.experimental.android.AndroidSoftware;
 import org.gradle.api.experimental.android.application.AndroidApplication;
+import org.gradle.api.experimental.android.extensions.BaselineProfile;
 import org.gradle.api.experimental.android.library.AndroidLibrary;
+import org.gradle.api.experimental.android.test.AndroidTest;
+import org.gradle.api.file.ConfigurableFileTree;
 import org.gradle.api.file.Directory;
+import org.gradle.api.file.RegularFile;
+import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.Copy;
+import org.gradle.api.tasks.TaskProvider;
 import org.gradle.api.tasks.testing.Test;
 import org.gradle.testing.jacoco.plugins.JacocoPluginExtension;
 import org.gradle.testing.jacoco.plugins.JacocoTaskExtension;
@@ -44,6 +58,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 import static org.gradle.api.experimental.android.AndroidSupport.ifPresent;
@@ -56,6 +71,7 @@ import static org.gradle.api.experimental.android.AndroidSupport.ifPresent;
  * This class is not meant to be used by other projects.
  */
 public final class NiaSupport {
+    private static final Integer DEFAULT_TARGET_SDK = 34;
     public static final String NIA_PROJECT_NAME = "nowinandroid";
 
     private NiaSupport() { /* Not instantiable */ }
@@ -64,9 +80,41 @@ public final class NiaSupport {
         return Objects.equals(project.getRootProject().getName().replace("-", ""), NiaSupport.NIA_PROJECT_NAME);
     }
 
+    public static void configureNiaTest(Project project, AndroidTest dslModel) {
+        TestExtension androidTest = project.getExtensions().getByType(TestExtension.class);
+        TestAndroidComponentsExtension androidTestComponents = project.getExtensions().getByType(TestAndroidComponentsExtension.class);
+
+        androidTest.getDefaultConfig().setTargetSdkPreview(dslModel.getTargetSdk().getOrElse(DEFAULT_TARGET_SDK).toString());
+
+        // Use the same flavor dimensions as the application to allow generating Baseline Profiles on prod,
+        // which is more close to what will be shipped to users (no fake data), but has ability to run the
+        // benchmarks on demo, so we benchmark on stable data.
+        NiaSupport.configureFlavors(androidTest, (vd, flavor) -> {
+            vd.buildConfigField(
+                "String",
+                "APP_FLAVOR_SUFFIX",
+                "\"" + (flavor.applicationIdSuffix == null ? "" : flavor.applicationIdSuffix) + "\""
+            );
+        });
+
+        configureKotlin(project);
+
+        configureGradleManagedDevices(androidTest);
+        configurePrintApksTask(project, androidTestComponents);
+
+        if (project.getExtensions().findByName("baselineProfile") != null) {
+            BaselineProfileProducerExtension baselineProfileProducerExtension = project.getExtensions().getByType(BaselineProfileProducerExtension.class);
+            BaselineProfileConsumerExtension baselineProfileConsumerExtension = project.getExtensions().getByType(BaselineProfileConsumerExtension.class);
+            configureBaselineProfile(project, dslModel.getBaselineProfile(), baselineProfileProducerExtension, baselineProfileConsumerExtension);
+        }
+    }
+
     public static void configureNiaLibrary(Project project, AndroidLibrary dslModel) {
         LibraryExtension androidLib = project.getExtensions().getByType(LibraryExtension.class);
         LibraryAndroidComponentsExtension androidLibComponents = project.getExtensions().getByType(LibraryAndroidComponentsExtension.class);
+
+        //noinspection deprecation
+        androidLib.getDefaultConfig().setTargetSdkPreview(dslModel.getTargetSdk().getOrElse(DEFAULT_TARGET_SDK).toString());
 
         configureFlavors(androidLib);
 
@@ -79,6 +127,8 @@ public final class NiaSupport {
     public static void configureNiaApplication(Project project, AndroidApplication dslModel) {
         ApplicationExtension androidApp = project.getExtensions().getByType(ApplicationExtension.class);
         ApplicationAndroidComponentsExtension androidAppComponents = project.getExtensions().getByType(ApplicationAndroidComponentsExtension.class);
+
+        androidApp.getDefaultConfig().setTargetSdkPreview(dslModel.getTargetSdk().getOrElse(DEFAULT_TARGET_SDK).toString());
 
         if (dslModel.getFlavors().getEnabled().get()) {
             configureFlavors(androidApp);
@@ -163,14 +213,13 @@ public final class NiaSupport {
             String checkBadgingTaskName = "check" + capitalizedVariantName + "Badging";
             project.getTasks().register(checkBadgingTaskName, CheckBadgingTask.class, task -> {
                 task.getGoldenBadging().set(project.getLayout().getProjectDirectory().file(variant.getName() + "-badging.txt"));
-                task.getGoldenBadging().set(generateBadging.get().getBadging());
+                task.getGeneratedBadging().set(generateBadging.get().getBadging());
                 task.getUpdateBadgingTaskName().set(updateBadgingTaskName);
                 task.getOutput().set(project.getLayout().getBuildDirectory().dir("intermediates/" + checkBadgingTaskName));
             });
         });
     }
 
-    @SuppressWarnings("deprecation")
     private static void disableUnnecessaryAndroidTests(Project project, LibraryAndroidComponentsExtension androidLibComponents) {
         androidLibComponents.beforeVariants(androidLibComponents.selector().all(), it -> {
             it.setEnableAndroidTest(it.getEnableAndroidTest() && project.getLayout().getProjectDirectory().file("src/androidTest").getAsFile().exists());
@@ -188,11 +237,11 @@ public final class NiaSupport {
             project.getDependencies().add("implementation", project.project(":core:designsystem"));
 
             project.getDependencies().add("implementation", "androidx.hilt:hilt-navigation-compose:1.2.0");
-            project.getDependencies().add("implementation", "androidx.lifecycle:lifecycle-runtime-compose:2.7.0");
-            project.getDependencies().add("implementation", "androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0");
+            project.getDependencies().add("implementation", "androidx.lifecycle:lifecycle-runtime-compose:2.8.6");
+            project.getDependencies().add("implementation", "androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6");
             project.getDependencies().add("implementation", "androidx.tracing:tracing-ktx:1.3.0-alpha02");
 
-            project.getDependencies().add("androidTestImplementation", "androidx.lifecycle:lifecycle-runtime-testing:2.7.0");
+            project.getDependencies().add("androidTestImplementation", "androidx.lifecycle:lifecycle-runtime-testing:2.8.6");
         }
     }
 
@@ -203,11 +252,23 @@ public final class NiaSupport {
      * @param android the Android extension to configure
      */
     private static void configureFlavors(CommonExtension<?, ?, ?, ?, ?, ?> android) {
+        configureFlavors(android, (dimension, flavor) -> {});
+    }
+
+    /**
+     * All NiA Android libraries get flavors, but only NiA Applications that specifically ask
+     * for them will also get flavors.
+     *
+     * @param android the Android extension to configure
+     * @param flavorConfigurationBlock additional configuration to perform on each flavor
+     */
+    public static void configureFlavors(CommonExtension<?, ?, ?, ?, ?, ?> android,
+                                        BiConsumer<VariantDimension, NiaFlavor> flavorConfigurationBlock) {
         android.getFlavorDimensions().add(FlavorDimension.contentType.name());
 
         Arrays.stream(NiaFlavor.values()).forEach(it -> android.getProductFlavors().create(it.name(), flavor -> {
             setDimensionReflectively(flavor, it.dimension.name());
-
+            flavorConfigurationBlock.accept(flavor, it);
             if (android instanceof ApplicationExtension && flavor instanceof ApplicationProductFlavor) {
                 if (it.applicationIdSuffix != null) {
                     ((ApplicationProductFlavor) flavor).setApplicationIdSuffix(it.applicationIdSuffix);
@@ -266,8 +327,8 @@ public final class NiaSupport {
     private static void configureKotlin(Project project) {
         project.getTasks().withType(KotlinCompile.class, task -> {
             KotlinJvmOptions kotlinOptions = task.getKotlinOptions();
-            // Set JVM target to 11
-            kotlinOptions.setJvmTarget(JavaVersion.VERSION_11.toString());
+            // Set JVM target to 17
+            kotlinOptions.setJvmTarget(JavaVersion.VERSION_17.toString());
 
             // Treat all Kotlin warnings as errors (disabled by default)
             // Override by setting warningsAsErrors=true in your ~/.gradle/gradle.properties
@@ -354,11 +415,12 @@ public final class NiaSupport {
                 "**/R.class",
                 "**/R$*.class",
                 "**/BuildConfig.*",
-                "**/Manifest*.*"
+                "**/Manifest*.*",
+                "**/*_Hilt*.class",
+                "**/Hilt_*.class"
         );
     }
 
-    @SuppressWarnings("deprecation")
     private static void configureJacoco(Project project, AndroidSoftware dslModel, CommonExtension<?, ?, ?, ?, ?, ?> android) {
         if (dslModel.getTesting().getJacoco().getEnabled().get()) {
             project.getLogger().info("JaCoCo is enabled in: " + project.getPath());
@@ -375,31 +437,38 @@ public final class NiaSupport {
 
             AndroidComponentsExtension<?, ?, ?> androidComponentsExtension = project.getExtensions().getByType(AndroidComponentsExtension.class);
             androidComponentsExtension.onVariants(androidComponentsExtension.selector().all(), variant -> {
-                final String testTaskName = "test" + StringUtils.capitalize(variant.getName()) + "UnitTest";
-                final File buildDir = project.getLayout().getBuildDirectory().get().getAsFile();
-                project.getTasks().register("jacoco" + StringUtils.capitalize(testTaskName) + "Report", JacocoReport.class, task -> {
-                    task.dependsOn(testTaskName);
+                final ObjectFactory objectFactory = project.getObjects();
+                final Directory buildDir = project.getLayout().getBuildDirectory().get();
+                final ListProperty<RegularFile> allJars = objectFactory.listProperty(RegularFile.class);
+                final ListProperty<Directory> allDirectories = objectFactory.listProperty(Directory.class);
 
-                    task.reports(report -> {
-                        report.getXml().getRequired().set(true);
-                        report.getXml().getRequired().set(true);
-                    });
-
+                TaskProvider<JacocoReport> reportTask = project.getTasks().register("create" + StringUtils.capitalize(variant.getName()) + "CombinedCoverageReport", JacocoReport.class, task -> {
                     task.getClassDirectories().setFrom(
-                        project.fileTree(project.getBuildDir() + "/tmp/kotlin-classes/" + variant.getName(), tree -> tree.exclude(coverageExclusions()))
+                        allJars,
+                        allDirectories.map(dirs -> dirs.stream().map(dir -> objectFactory.fileTree().setDir(dir).exclude(coverageExclusions())))
                     );
 
-                    task.getSourceDirectories().setFrom(
-                        project.files(project.getProjectDir() + "/src/main/java", project.getProjectDir() + "/src/main/kotlin"
-                        ));
+                    task.getReports().getXml().getRequired().set(true);
+                    task.getReports().getHtml().getRequired().set(true);
 
-                    task.getExecutionData().setFrom(
-                        project.files(buildDir + "/jacoco/" + testTaskName + ".exec")
-                    );
+                    // TODO: This is missing files in src/debug/, src/prod, src/demo, src/demoDebug...
+                    String projectDir = project.getLayout().getProjectDirectory().getAsFile().getPath();
+                    task.getSourceDirectories().setFrom(project.files(projectDir + "/src/main/java", projectDir + "/src/main/kotlin"));
+
+                    ConfigurableFileTree unitTestCoverage = project.fileTree(buildDir.file("/outputs/unit_test_code_coverage/" + variant.getName() + "UnitTest"));
+                    unitTestCoverage.matching(unitTestCoverage.include("**/*.exec"));
+                    ConfigurableFileTree androidTestCoverage = project.fileTree(buildDir.file("/outputs/code_coverage/" + variant.getName() + "AndroidTest"));
+                    androidTestCoverage.matching(androidTestCoverage.include("**/*.ec"));
+
+                    task.getExecutionData().setFrom(unitTestCoverage, androidTestCoverage);
                 });
+
+                variant.getArtifacts().forScope(ScopedArtifacts.Scope.PROJECT)
+                    .use(reportTask)
+                    .toGet(ScopedArtifact.CLASSES.INSTANCE, ignore -> allJars, ignore -> allDirectories);
             });
 
-            project.getTasks().withType(Test.class, test -> {
+            project.getTasks().withType(Test.class).configureEach(test -> {
                 JacocoTaskExtension jacocoTaskExtension = test.getExtensions().getByType(JacocoTaskExtension.class);
 
                 // Required for JaCoCo + Robolectric
@@ -421,6 +490,22 @@ public final class NiaSupport {
 
             DependencyGuardPluginExtension dependencyGuard = project.getExtensions().getByType(DependencyGuardPluginExtension.class);
             dependencyGuard.configuration(dslModel.getDependencyGuard().getConfigurationName().get());
+        }
+    }
+
+    @SuppressWarnings("UnstableApiUsage")
+    public static void configureBaselineProfile(Project project, BaselineProfile baselineProfile, BaselineProfileProducerExtension baselineProfileProducerExtension, BaselineProfileConsumerExtension baselineProfileConsumerExtension) {
+        if (baselineProfile.getEnabled().get()) {
+            project.getPlugins().apply("androidx.baselineprofile");
+
+            baselineProfileConsumerExtension.setAutomaticGenerationDuringBuild(baselineProfile.getAutomaticGenerationDuringBuild().get());
+
+            if (baselineProfile.getAdditionalManagedDevice().isPresent()) {
+                baselineProfileProducerExtension.getManagedDevices().add(baselineProfile.getAdditionalManagedDevice().get());
+            }
+            ifPresent(baselineProfile.getUseConnectedDevices(), baselineProfileProducerExtension::setUseConnectedDevices);
+
+            project.getConfigurations().getByName("baselineProfile").fromDependencyCollector(baselineProfile.getDependencies().getProfile());
         }
     }
 }

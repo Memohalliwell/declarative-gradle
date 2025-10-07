@@ -10,21 +10,32 @@ description = "Implements the declarative JVM DSL prototype"
 
 dependencies {
     implementation(project(":plugin-common"))
-    implementation("org.gradle.toolchains:foojay-resolver:0.8.0")
-    implementation(gradleApi())
+    implementation("org.gradle.toolchains:foojay-resolver:1.0.0")
 }
 
 testing {
     suites {
+        @Suppress("UnstableApiUsage")
         val integTest by registering(JvmTestSuite::class) {
             useSpock("2.2-groovy-3.0")
 
             dependencies {
                 implementation(project(":internal-testing-utils"))
             }
+
+            targets {
+                all {
+                    testTask.configure {
+                        shouldRunAfter(tasks.named("test"))
+                        inputs.files(layout.settingsDirectory.file("version.txt"))
+                    }
+                }
+            }
         }
 
-        tasks.getByPath("check").dependsOn(integTest)
+        tasks.named("check") {
+            dependsOn(integTest)
+        }
     }
 }
 
@@ -59,6 +70,13 @@ gradlePlugin {
             description = "Experimental declarative plugin for the JVM ecosystem"
             implementationClass = "org.gradle.api.experimental.jvm.JvmEcosystemPlugin"
             tags = setOf("declarative-gradle", "java", "jvm")
+        }
+        create("jvm-ecosystem-init") {
+            id = "org.gradle.experimental.jvm-ecosystem-init"
+            displayName = "JVM Experimental Init Plugin"
+            description = "Experimental init plugin for the JVM ecosystem"
+            implementationClass = "org.gradle.api.experimental.jvm.JvmEcosystemInitPlugin"
+            tags = setOf("declarative-gradle", "java", "jvm", "init")
         }
     }
 }

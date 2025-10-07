@@ -1,10 +1,28 @@
 package org.gradle.api.experimental.kmp
 
-import org.gradle.integtests.fixtures.AbstractProjectInitSpecification
+import org.gradle.integtests.fixtures.AbstractBuildInitSpecification
+import org.gradle.testkit.runner.GradleRunner
 
-class KotlinApplicationInitProjectSpec extends AbstractProjectInitSpecification {
+class KotlinApplicationInitProjectSpec extends AbstractBuildInitSpecification {
     @Override
-    String getPluginId() {
-        return "org.gradle.experimental.kmp-ecosystem"
+    protected String getEcosystemPluginId() {
+        return "org.gradle.experimental.kmp-ecosystem-init"
+    }
+
+    @Override
+    protected String getProjectSpecType() {
+        return "kotlin-application"
+    }
+
+    @Override
+    protected void validateBuild() {
+        result = GradleRunner.create()
+                .withProjectDir(projectDir)
+                .withPluginClasspath()
+                .withArguments(":app:run")
+                .forwardOutput()
+                .build()
+
+        assert result.output.contains("Hello World!")
     }
 }

@@ -125,6 +125,31 @@ class AndroidLibrarySpec extends AbstractSpecification {
         fails(":compileReleaseKotlin")
     }
 
+    def 'can create a library with compose enabled'() {
+        given:
+        buildFile << """
+            androidLibrary {
+                jdkVersion = 17
+                compileSdk = 34
+                
+                namespace = "org.example.android.library"
+                
+                compose {
+                    enabled = true
+                }
+                
+                testing {
+                    failOnNoDiscoveredTests = false
+                }
+            }
+        """
+
+        expect:
+        succeeds(":build")
+        file("build/outputs/aar/example-debug.aar").exists()
+        file("build/outputs/aar/example-release.aar").exists()
+    }
+
     def setup() {
         settingsFile << """
             plugins {
@@ -138,6 +163,10 @@ class AndroidLibrarySpec extends AbstractSpecification {
             }
     
             rootProject.name = "example"
+        """
+
+        file("gradle.properties").text = """
+            android.useAndroidX=true
         """
     }
 }

@@ -4,38 +4,48 @@ plugins {
     `kotlin-dsl`
     id("build-logic.publishing")
     groovy // For spock testing
+    `java-test-fixtures`
 }
 
 description = "Common APIs and implementation classes shared by the ecosystem specific declarative prototypes"
 
 dependencies {
-    implementation(libs.android.agp.application)
-
     implementation("commons-io:commons-io:2.15.1")
-    implementation(gradleApi())
 }
 
 testing {
     suites {
         val test by getting(JvmTestSuite::class) {
-            useSpock("2.2-groovy-3.0")
+            useSpock("2.2-groovy-4.0")
 
             dependencies {
                 implementation("commons-io:commons-io:2.15.1")
+                implementation(testFixtures(project()))
             }
         }
 
         val integTest by registering(JvmTestSuite::class) {
-            useSpock("2.2-groovy-3.0")
+            useSpock("2.2-groovy-4.0")
 
             dependencies {
                 implementation("commons-io:commons-io:2.15.1")
                 implementation(project(":plugin-jvm"))
-                implementation(project())
+                implementation(testFixtures(project()))
+            }
+
+            targets {
+                all {
+                    testTask.configure {
+                        shouldRunAfter(tasks.named("test"))
+                        inputs.files(layout.settingsDirectory.file("version.txt"))
+                    }
+                }
             }
         }
 
-        tasks.getByPath("check").dependsOn(integTest)
+        tasks.named("check") {
+            dependsOn(integTest)
+        }
     }
 }
 

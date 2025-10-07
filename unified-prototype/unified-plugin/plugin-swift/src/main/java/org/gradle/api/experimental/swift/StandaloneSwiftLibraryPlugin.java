@@ -11,12 +11,11 @@ public abstract class StandaloneSwiftLibraryPlugin implements Plugin<Project> {
     public static final String SWIFT_LIBRARY = "swiftLibrary";
 
     @SoftwareType(name = SWIFT_LIBRARY, modelPublicType = SwiftLibrary.class)
-    abstract public SwiftLibrary getLibrary();
+    public abstract SwiftLibrary getLibrary();
 
     @Override
     public void apply(Project project) {
         SwiftLibrary library = getLibrary();
-        project.getExtensions().add(SWIFT_LIBRARY, library);
 
         project.getPlugins().apply(SwiftLibraryPlugin.class);
 

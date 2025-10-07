@@ -26,6 +26,8 @@ dependencies {
     implementation(libs.firebase.perf.plugin)
     implementation(libs.firebase.crashlytics.plugin)
     implementation(libs.oss.licenses.plugin)
+    implementation(libs.compose.compiler.plugin)
+    implementation(libs.secrets.plugin)
 
     implementation(libs.apache.commons.lang)
     implementation(libs.android.tools.common)
@@ -36,14 +38,25 @@ testing {
     suites {
         @Suppress("UnstableApiUsage")
         val integTest by registering(JvmTestSuite::class) {
-            useSpock("2.2-groovy-3.0")
+            useSpock("2.2-groovy-4.0")
 
             dependencies {
                 implementation(project(":internal-testing-utils"))
             }
+
+            targets {
+                all {
+                    testTask.configure {
+                        shouldRunAfter(tasks.named("test"))
+                        inputs.files(layout.settingsDirectory.file("version.txt"))
+                    }
+                }
+            }
         }
 
-        tasks.getByPath("check").dependsOn(integTest)
+        tasks.named("check") {
+            dependsOn(integTest)
+        }
     }
 }
 
@@ -65,6 +78,13 @@ gradlePlugin {
             implementationClass = "org.gradle.api.experimental.android.application.StandaloneAndroidApplicationPlugin"
             tags = setOf("declarative-gradle", "android")
         }
+        create("android-test") {
+            id = "org.gradle.experimental.android-test"
+            displayName = "Android Test Experimental Declarative Plugin"
+            description = "Experimental declarative plugin for Android test projects"
+            implementationClass = "org.gradle.api.experimental.android.test.StandaloneAndroidTestPlugin"
+            tags = setOf("declarative-gradle", "android")
+        }
         create("android-ecosystem") {
             id = "org.gradle.experimental.android-ecosystem"
             displayName = "Android Ecosystem Experimental Declarative Plugin"
@@ -73,8 +93,6 @@ gradlePlugin {
             tags = setOf("declarative-gradle", "android")
         }
     }
-
-    testSourceSet(sourceSets.getByName("integTest"))
 }
 
 // Compile against Java 17 since Android requires Java 17 at minimum

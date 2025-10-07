@@ -24,14 +24,20 @@ public final class ComposeSupport {
             project.getLogger().info("Compose is enabled in: " + project.getPath());
             androidLib.getBuildFeatures().setCompose(true);
 
-            androidLib.getComposeOptions().setKotlinCompilerExtensionVersion("1.5.12");
+            project.getPlugins().apply("org.jetbrains.kotlin.plugin.compose");
 
-            dslModel.getDependencies().getImplementation().add(project.getDependencies().platform("androidx.compose:compose-bom:2024.02.02"));
-            dslModel.getDependencies().getImplementation().add(project.getDependencies().platform("androidx.compose:compose-bom:2024.02.02"));
+            // Use default version
+            // androidLib.getComposeOptions().setKotlinCompilerExtensionVersion("1.5.8");
+
+            dslModel.getDependencies().getImplementation().add(project.getDependencies().platform("androidx.compose:compose-bom:2024.09.00"));
+            dslModel.getTesting().getDependencies().getImplementation().add(project.getDependencies().platform("androidx.compose:compose-bom:2024.09.00"));
+            dslModel.getTesting().getDependencies().getAndroidImplementation().add(project.getDependencies().platform("androidx.compose:compose-bom:2024.09.00"));
+
+            // TODO: Are these necessary?  Could they be removed and added explicitly per project as they are used?
             dslModel.getDependencies().getImplementation().add("androidx.compose.ui:ui-tooling-preview");
-
             dslModel.getBuildTypes().getDebug().getDependencies().getImplementation().add("androidx.compose.ui:ui-tooling");
 
+            // TODO: Expose this as a testing option?
             androidLib.getTestOptions().getUnitTests().setIncludeAndroidResources(true); // For Robolectric
 
             project.getTasks().withType(KotlinCompile.class).configureEach(task -> {

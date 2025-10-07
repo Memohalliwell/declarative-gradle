@@ -3,12 +3,14 @@ package org.gradle.api.experimental.android;
 import com.android.build.api.dsl.BaseFlavor;
 import com.android.build.api.dsl.CommonExtension;
 import org.gradle.api.Action;
+import org.gradle.api.NamedDomainObjectContainer;
 import org.gradle.api.experimental.android.extensions.BaselineProfile;
 import org.gradle.api.experimental.android.extensions.Compose;
 import org.gradle.api.experimental.android.extensions.CoreLibraryDesugaring;
 import org.gradle.api.experimental.android.extensions.Hilt;
 import org.gradle.api.experimental.android.extensions.KotlinSerialization;
 import org.gradle.api.experimental.android.extensions.Room;
+import org.gradle.api.experimental.android.extensions.Secrets;
 import org.gradle.api.experimental.android.extensions.testing.Testing;
 import org.gradle.api.experimental.android.nia.Feature;
 import org.gradle.api.experimental.android.extensions.Licenses;
@@ -20,6 +22,9 @@ import org.gradle.declarative.dsl.model.annotations.Configuring;
 import org.gradle.declarative.dsl.model.annotations.Restricted;
 
 public interface AndroidSoftware extends HasLinting {
+    @Restricted
+    Property<Integer> getTargetSdk();
+
     /**
      * @see CommonExtension#getCompileSdk()
      */
@@ -143,4 +148,18 @@ public interface AndroidSoftware extends HasLinting {
     default void lint(Action<? super Lint> action) {
         action.execute(getLint());
     }
+
+    /**
+     * Applies the Secrets Gradle Plugin for Android (https://github.com/google/secrets-gradle-plugin).
+     */
+    @Nested
+    Secrets getSecrets();
+
+    @Configuring
+    default void secrets(Action<? super Secrets> action) {
+        action.execute(getSecrets());
+    }
+
+    @Nested
+    NamedDomainObjectContainer<ExperimentalProperty> getExperimentalProperties();
 }

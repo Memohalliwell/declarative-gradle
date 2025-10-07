@@ -22,7 +22,7 @@ import org.gradle.api.tasks.Nested;
 import org.gradle.declarative.dsl.model.annotations.Configuring;
 import org.gradle.declarative.dsl.model.annotations.Restricted;
 
-@Restricted
+// TODO: This might be better split into separate producer/consumer parts
 public interface BaselineProfile {
     @Restricted
     Property<Boolean> getEnabled();
@@ -37,4 +37,10 @@ public interface BaselineProfile {
     default void dependencies(Action<? super BaselineProfileDependencies> action) {
         action.execute(getDependencies());
     }
+
+    @Restricted
+    Property<String> getAdditionalManagedDevice();
+
+    @Restricted
+    Property<Boolean> getUseConnectedDevices();
 }

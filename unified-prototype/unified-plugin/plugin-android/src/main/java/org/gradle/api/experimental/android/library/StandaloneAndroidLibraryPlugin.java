@@ -2,18 +2,17 @@ package org.gradle.api.experimental.android.library;
 
 import com.android.build.api.dsl.CommonExtension;
 import com.android.build.api.dsl.LibraryExtension;
-import com.android.build.api.variant.LibraryAndroidComponentsExtension;
 import com.google.protobuf.gradle.ProtobufExtension;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.Dependency;
 import org.gradle.api.experimental.android.AbstractAndroidSoftwarePlugin;
 import org.gradle.api.experimental.android.AndroidSoftware;
+import org.gradle.api.experimental.android.extensions.linting.LintSupport;
 import org.gradle.api.experimental.android.nia.NiaSupport;
 import org.gradle.api.internal.plugins.software.SoftwareType;
 import org.jetbrains.kotlin.com.google.common.base.Preconditions;
 
-import java.io.File;
 import java.util.Objects;
 import java.util.Set;
 
@@ -28,7 +27,7 @@ public abstract class StandaloneAndroidLibraryPlugin extends AbstractAndroidSoft
 
     public static final String ANDROID_LIBRARY = "androidLibrary";
 
-    @SoftwareType(name = ANDROID_LIBRARY, modelPublicType=AndroidLibrary.class)
+    @SoftwareType(name = ANDROID_LIBRARY, modelPublicType = AndroidLibrary.class)
     public abstract AndroidLibrary getAndroidLibrary();
 
     @Override
@@ -41,10 +40,10 @@ public abstract class StandaloneAndroidLibraryPlugin extends AbstractAndroidSoft
         super.apply(project);
 
         AndroidLibrary dslModel = getAndroidLibrary();
-        project.getExtensions().add(ANDROID_LIBRARY, dslModel);
 
         // Setup library-specific conventions
         dslModel.getProtobuf().getEnabled().convention(false);
+        dslModel.getBuildConfig().convention(false);
 
         // Register an afterEvaluate listener before we apply the Android plugin to ensure we can
         // run actions before Android does.
@@ -71,8 +70,9 @@ public abstract class StandaloneAndroidLibraryPlugin extends AbstractAndroidSoft
         if (NiaSupport.isNiaProject(project)) {
             NiaSupport.configureNiaLibrary(project, dslModel);
         }
-
-        ifPresent(dslModel.getConsumerProguardFile(), android.getDefaultConfig()::consumerProguardFile);
+        LintSupport.configureLint(project, dslModel);
+        ifPresent(dslModel.getConsumerProguardFiles(), android.getDefaultConfig()::consumerProguardFile);
+        ifPresent(dslModel.getBuildConfig(), android.getBuildFeatures()::setBuildConfig);
     }
 
     protected void configureProtobuf(Project project, AndroidLibrary dslModel, CommonExtension<?, ?, ?, ?, ?, ?> android) {
@@ -92,21 +92,6 @@ public abstract class StandaloneAndroidLibraryPlugin extends AbstractAndroidSoft
                     generator.all().forEach(task -> {
                         task.getBuiltins().create("java", builtin -> builtin.getOptions().add("lite"));
                         task.getBuiltins().create("kotlin", builtin -> builtin.getOptions().add("lite"));
-                    });
-                });
-
-                /*
-                 * TODO:DG We don't want to rely on beforeVariants here, but how to do without hardcoding:
-                 *  the NiA variants: "demoDebug, demoRelease, prodDebug, prodRelease"?
-                 * This would seem to require some sort of ProductFlavor support (and maybe enumerated buildTypes?)
-                 * which we don't want to add just yet.
-                 */
-                LibraryAndroidComponentsExtension androidComponents = project.getExtensions().getByType(LibraryAndroidComponentsExtension.class);
-                File buildDir = project.getLayout().getBuildDirectory().get().getAsFile();
-                androidComponents.beforeVariants(androidComponents.selector().all(), variant -> {
-                    android.getSourceSets().register(variant.getName()).configure(sourceSet -> {
-                        sourceSet.getJava().srcDir(new File(buildDir, dslModel.getProtobuf().getGeneratedRootDir().get() + "/" + variant.getName() + "/java"));
-                        sourceSet.getKotlin().srcDir(new File(buildDir, dslModel.getProtobuf().getGeneratedRootDir().get() + "/" + variant.getName() + "/kotlin"));
                     });
                 });
             } else {

@@ -18,10 +18,9 @@ package org.gradle.api.experimental.android.extensions;
 
 import org.gradle.api.artifacts.dsl.Dependencies;
 import org.gradle.api.artifacts.dsl.DependencyCollector;
-import org.gradle.declarative.dsl.model.annotations.Restricted;
+import org.gradle.api.plugins.jvm.PlatformDependencyModifiers;
 
 @SuppressWarnings("UnstableApiUsage")
-@Restricted
-public interface ProtobufDependencies extends Dependencies {
+public interface ProtobufDependencies extends Dependencies, PlatformDependencyModifiers {
     DependencyCollector getProtoc();
 }
