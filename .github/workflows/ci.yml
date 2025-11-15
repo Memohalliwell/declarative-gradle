@@ -22,12 +22,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: "true"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
 
@@ -45,18 +45,18 @@ jobs:
           external_repository: gradle/${{ env.PREVIEW_REPO }}
           publish_dir: ./_site
           destination_dir: ${{ env.PR_PATH }}
-        
+
       - name: Update comment
-        uses: hasura/comment-progress@v2.2.0
+        uses: hasura/comment-progress@v2.3.0
         if: github.ref != 'refs/heads/main'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
           number: ${{ github.event.number }}
           id: deploy-preview
-          message: > 
+          message: >
             A preview of ${{ github.event.after }} is uploaded and can be seen here:
-            
+
             ✨ https://${{ env.DOMAIN }}/${{ env.PREVIEW_REPO }}/${{ env.PR_PATH}}/ ✨
-            
-            Changes may take a few minutes to propagate. 
+
+            Changes may take a few minutes to propagate.
